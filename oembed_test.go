@@ -122,8 +122,8 @@ func TestIsOEmbedSupported(t *testing.T) {
 		url       string
 		supported bool
 	}{
-		{"https://www.youtube.com/watch?v=dQw4w9WgXcQ", true},
-		{"https://youtu.be/dQw4w9WgXcQ", true},
+		{"https://www.youtube.com/watch?v=MbyvLY8CGFM", true},
+		{"https://youtu.be/MbyvLY8CGFM", true},
 		{"https://vimeo.com/123456", true},
 		{"https://twitter.com/user/status/123456", true},
 		{"https://soundcloud.com/artist/track", true},

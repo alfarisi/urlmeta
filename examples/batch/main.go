@@ -24,7 +24,7 @@ func main() {
 	// List of URLs to process
 	urls := []string{
 		"https://github.com/golang/go",
-		"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		"https://www.youtube.com/watch?v=MbyvLY8CGFM",
 		"https://dev.to",
 		"https://stackoverflow.com",
 		"https://medium.com",

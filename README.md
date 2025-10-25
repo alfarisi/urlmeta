@@ -14,7 +14,7 @@ import (
 
 func main() {
     // Single call - automatically extracts metadata AND oEmbed!
-    metadata, err := urlmeta.Extract("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    metadata, err := urlmeta.Extract("https://www.youtube.com/watch?v=MbyvLY8CGFM")
     if err != nil {
         log.Fatal(err)
     }
@@ -175,7 +175,7 @@ oembed, err := client.ExtractOEmbed("https://youtube.com/watch?v=123")
 
 ```go
 // One call gets everything!
-url := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+url := "https://www.youtube.com/watch?v=MbyvLY8CGFM"
 
 metadata, err := urlmeta.Extract(url)
 if err != nil {
@@ -339,7 +339,6 @@ See [examples/](./examples/) directory for more usage examples:
 - [Basic Usage](./examples/basic/main.go) - Simple metadata extraction
 - [Advanced Options](./examples/advanced/main.go) - Custom configuration
 - [Batch Processing](./examples/batch/main.go) - Concurrent extraction
-- [oEmbed](./examples/oembed/main.go) - oEmbed protocol usage
 
 ## Performance
 
@@ -433,4 +432,4 @@ This is a server-side library, CORS doesn't apply. However, some APIs (like Inst
 
 ## License
 
-MIT © [Your Name]
+MIT License ©

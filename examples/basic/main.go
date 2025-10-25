@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/yourusername/urlmeta"
+	"github.com/alfarisi/urlmeta"
 )
 
 func main() {
@@ -15,10 +15,10 @@ func main() {
 	// List of URLs to extract metadata from
 	urls := []string{
 		"https://github.com/golang/go",
-		"https://www.youtube.com/watch?v=dQw4w9WgXcQ", // Has oEmbed!
+		"https://www.youtube.com/watch?v=MbyvLY8CGFM", // Has oEmbed!
 		"wordpress.com", // Auto adds https://
 		"https://www.nytimes.com",
-		"https://vimeo.com/148751763", // Has oEmbed!
+		"https://vimeo.com/1234567", // Has oEmbed!
 	}
 
 	for i, url := range urls {
