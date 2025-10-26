@@ -11,6 +11,7 @@ import (
 )
 
 // OEmbed represents oEmbed response data
+// Specification: https://oembed.com/
 type OEmbed struct {
 	Type            string `json:"type"`                       // photo, video, link, rich
 	Version         string `json:"version"`                    // oEmbed version (usually "1.0")
@@ -42,136 +43,12 @@ type OEmbedProvider struct {
 
 // OEmbedEndpoint represents an oEmbed endpoint
 type OEmbedEndpoint struct {
-	Schemes  []string
-	URL      string
+	Schemes   []string
+	URL       string
 	Discovery bool
 }
 
-// Well-known oEmbed providers
-var knownProviders = []OEmbedProvider{
-	{
-		Name: "YouTube",
-		URL:  "https://www.youtube.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://*.youtube.com/watch*",
-					"https://*.youtube.com/v/*",
-					"https://youtu.be/*",
-				},
-				URL:       "https://www.youtube.com/oembed",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "Vimeo",
-		URL:  "https://vimeo.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://vimeo.com/*",
-					"https://vimeo.com/groups/*/videos/*",
-				},
-				URL:       "https://vimeo.com/api/oembed.json",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "Twitter",
-		URL:  "https://twitter.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://twitter.com/*/status/*",
-					"https://twitter.com/*/statuses/*",
-					"https://*.twitter.com/*/status/*",
-				},
-				URL:       "https://publish.twitter.com/oembed",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "Instagram",
-		URL:  "https://instagram.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"http://instagram.com/*/p/*",
-					"http://www.instagram.com/*/p/*",
-					"https://instagram.com/*/p/*",
-					"https://www.instagram.com/*/p/*",
-					"http://instagram.com/p/*",
-					"http://www.instagram.com/p/*",
-					"https://instagram.com/p/*",
-					"https://www.instagram.com/p/*",
-				},
-				URL:       "https://graph.facebook.com/v16.0/instagram_oembed",
-				Discovery: false,
-			},
-		},
-	},
-	{
-		Name: "Flickr",
-		URL:  "https://www.flickr.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"http://*.flickr.com/photos/*",
-					"http://flic.kr/p/*",
-					"https://*.flickr.com/photos/*",
-					"https://flic.kr/p/*",
-				},
-				URL:       "https://www.flickr.com/services/oembed/",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "SoundCloud",
-		URL:  "https://soundcloud.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://soundcloud.com/*",
-					"https://soundcloud.app.goo.gl/*",
-				},
-				URL:       "https://soundcloud.com/oembed",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "Spotify",
-		URL:  "https://spotify.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://open.spotify.com/*",
-					"https://play.spotify.com/*",
-				},
-				URL:       "https://open.spotify.com/oembed",
-				Discovery: true,
-			},
-		},
-	},
-	{
-		Name: "TikTok",
-		URL:  "https://www.tiktok.com",
-		Endpoints: []OEmbedEndpoint{
-			{
-				Schemes: []string{
-					"https://www.tiktok.com/*/video/*",
-					"https://www.tiktok.com/@*/video/*",
-				},
-				URL:       "https://www.tiktok.com/oembed",
-				Discovery: true,
-			},
-		},
-	},
-}
+// Note: Provider list is defined in providers.go for better organization
 
 // ExtractOEmbed attempts to extract oEmbed data from a URL
 func (c *Client) ExtractOEmbed(targetURL string) (*OEmbed, error) {
@@ -252,7 +129,12 @@ func (c *Client) discoverOEmbedEndpoint(targetURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Ignore close error
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP error: %d", resp.StatusCode)
@@ -266,9 +148,12 @@ func (c *Client) discoverOEmbedEndpoint(targetURL string) (string, error) {
 	endpoint := findOEmbedLink(doc)
 	if endpoint != "" {
 		// Resolve relative URLs
-		baseURL, _ := url.Parse(targetURL)
-		endpointURL, err := url.Parse(endpoint)
-		if err == nil && !endpointURL.IsAbs() {
+		baseURL, parseErr := url.Parse(targetURL)
+		if parseErr != nil {
+			return endpoint, nil
+		}
+		endpointURL, parseErr := url.Parse(endpoint)
+		if parseErr == nil && !endpointURL.IsAbs() {
 			endpoint = baseURL.ResolveReference(endpointURL).String()
 		}
 	}
@@ -330,7 +215,12 @@ func (c *Client) fetchOEmbed(endpoint, targetURL string) (*OEmbed, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Ignore close error
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oEmbed endpoint returned HTTP %d", resp.StatusCode)
@@ -350,6 +240,7 @@ func IsOEmbedSupported(targetURL string) bool {
 }
 
 // GetSupportedProviders returns list of known oEmbed providers
+// Provider list is defined in providers.go
 func GetSupportedProviders() []OEmbedProvider {
-	return knownProviders
+	return GetKnownProviders()
 }

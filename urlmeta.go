@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,41 +17,43 @@ import (
 // Metadata represents extracted information from a web page
 type Metadata struct {
 	// Basic Info
-	Title           string `json:"title"`
-	Description     string `json:"description"`
-	URL             string `json:"url"`
-	CanonicalURL    string `json:"canonical_url,omitempty"`
-	
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	URL          string `json:"url"`
+	CanonicalURL string `json:"canonical_url,omitempty"`
+
 	// Provider Info
 	ProviderName    string `json:"provider_name"`
 	ProviderURL     string `json:"provider_url"`
 	ProviderDisplay string `json:"provider_display"`
-	
+
 	// Media
-	Images          []Image `json:"images,omitempty"`
-	Videos          []Video `json:"videos,omitempty"`
-	
+	Images []Image `json:"images,omitempty"`
+	Videos []Video `json:"videos,omitempty"`
+
 	// OpenGraph
-	Type            string `json:"type,omitempty"`
-	SiteName        string `json:"site_name,omitempty"`
-	Locale          string `json:"locale,omitempty"`
-	
+	Type     string `json:"type,omitempty"`
+	SiteName string `json:"site_name,omitempty"`
+	Locale   string `json:"locale,omitempty"`
+	OGTitle  string `json:"og_title,omitempty"`
+
 	// Additional Meta
-	Author          string   `json:"author,omitempty"`
-	PublishedTime   string   `json:"published_time,omitempty"`
-	ModifiedTime    string   `json:"modified_time,omitempty"`
-	Keywords        []string `json:"keywords,omitempty"`
-	
+	Author        string   `json:"author,omitempty"`
+	PublishedTime string   `json:"published_time,omitempty"`
+	ModifiedTime  string   `json:"modified_time,omitempty"`
+	Keywords      []string `json:"keywords,omitempty"`
+
 	// Twitter Card
-	TwitterCard     string `json:"twitter_card,omitempty"`
-	TwitterSite     string `json:"twitter_site,omitempty"`
-	TwitterCreator  string `json:"twitter_creator,omitempty"`
-	
+	TwitterCard    string `json:"twitter_card,omitempty"`
+	TwitterSite    string `json:"twitter_site,omitempty"`
+	TwitterCreator string `json:"twitter_creator,omitempty"`
+	TwitterTitle   string `json:"twitter_title,omitempty"`
+
 	// Favicon
-	Favicon         string `json:"favicon,omitempty"`
-	
-	// oEmbed data (automatically included if available)
-	OEmbed          *OEmbed `json:"oembed,omitempty"`
+	Favicon string `json:"favicon,omitempty"`
+
+	// oEmbed (automatically included if available)
+	OEmbed *OEmbed `json:"oembed,omitempty"`
 }
 
 // Image represents an image from the page
@@ -69,13 +72,25 @@ type Video struct {
 	Height int    `json:"height,omitempty"`
 }
 
+// ExtractionStrategy determines how metadata is extracted
+type ExtractionStrategy int
+
+const (
+	// StrategyAuto automatically chooses best strategy (default)
+	StrategyAuto ExtractionStrategy = iota
+	// StrategyOEmbedFirst tries oEmbed first, falls back to HTML
+	StrategyOEmbedFirst
+	// StrategyHTMLOnly only extracts from HTML (fastest for non-embed sites)
+	StrategyHTMLOnly
+)
+
 // Client handles URL metadata extraction
 type Client struct {
-	httpClient    *http.Client
-	userAgent     string
-	maxRedirects  int
-	followMetaRef bool
-	autoOEmbed    bool // Automatically fetch oEmbed if available
+	httpClient   *http.Client
+	userAgent    string
+	maxRedirects int
+	autoOEmbed   bool
+	strategy     ExtractionStrategy
 }
 
 // Option is a function that configures a Client
@@ -116,16 +131,23 @@ func WithAutoOEmbed(auto bool) Option {
 	}
 }
 
+// WithStrategy sets extraction strategy (default: StrategyAuto)
+func WithStrategy(strategy ExtractionStrategy) Option {
+	return func(c *Client) {
+		c.strategy = strategy
+	}
+}
+
 // NewClient creates a new metadata extraction client with options
 func NewClient(opts ...Option) *Client {
 	c := &Client{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		userAgent:     "Mozilla/5.0 (compatible; URLMetaBot/1.0; +https://github.com/yourusername/urlmeta)",
-		maxRedirects:  10,
-		followMetaRef: true,
-		autoOEmbed:    true, // Enable by default
+		userAgent:    "Mozilla/5.0 (compatible; URLMetaBot/1.0; +https://github.com/yourusername/urlmeta)",
+		maxRedirects: 10,
+		autoOEmbed:   true,
+		strategy:     StrategyAuto,
 	}
 
 	for _, opt := range opts {
@@ -143,7 +165,7 @@ func NewClient(opts ...Option) *Client {
 	return c
 }
 
-// Extract extracts metadata from the given URL
+// Extract extracts metadata from the given URL using optimal strategy
 func (c *Client) Extract(targetURL string) (*Metadata, error) {
 	// Normalize URL
 	targetURL = normalizeURL(targetURL)
@@ -157,6 +179,95 @@ func (c *Client) Extract(targetURL string) (*Metadata, error) {
 		return nil, fmt.Errorf("unsupported protocol: %s (only http and https are supported)", parsedURL.Scheme)
 	}
 
+	// Choose extraction strategy
+	strategy := c.strategy
+	if strategy == StrategyAuto {
+		// Auto-detect: if oEmbed supported, use oEmbed-first strategy
+		if c.autoOEmbed && IsOEmbedSupported(targetURL) {
+			strategy = StrategyOEmbedFirst
+		} else {
+			strategy = StrategyHTMLOnly
+		}
+	}
+
+	// Execute strategy
+	switch strategy {
+	case StrategyOEmbedFirst:
+		return c.extractOEmbedFirst(targetURL, parsedURL)
+	case StrategyHTMLOnly:
+		return c.extractHTMLOnly(targetURL, parsedURL)
+	default:
+		return c.extractHTMLOnly(targetURL, parsedURL)
+	}
+}
+
+// extractOEmbedFirst tries oEmbed first, optionally fetches HTML for additional data
+func (c *Client) extractOEmbedFirst(targetURL string, parsedURL *url.URL) (*Metadata, error) {
+	// Step 1: Get oEmbed data (ONLY 1 HTTP call!)
+	oembed, err := c.ExtractOEmbed(targetURL)
+	if err != nil {
+		// oEmbed failed, fall back to HTML
+		return c.extractHTMLOnly(targetURL, parsedURL)
+	}
+
+	// Step 2: Build metadata from oEmbed (no HTML parsing needed!)
+	metadata := &Metadata{
+		URL:             targetURL,
+		ProviderURL:     fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host),
+		ProviderDisplay: parsedURL.Host,
+		Images:          []Image{},
+		Videos:          []Video{},
+		Keywords:        []string{},
+		OEmbed:          oembed,
+	}
+
+	// Fill from oEmbed data
+	if oembed.Title != "" {
+		metadata.Title = oembed.Title
+	}
+	if oembed.AuthorName != "" {
+		metadata.Author = oembed.AuthorName
+	}
+	if oembed.ProviderName != "" {
+		metadata.ProviderName = oembed.ProviderName
+		metadata.SiteName = oembed.ProviderName
+	} else {
+		metadata.ProviderName = parsedURL.Host
+	}
+	if oembed.ProviderURL != "" {
+		metadata.ProviderURL = oembed.ProviderURL
+	}
+
+	// Add oEmbed thumbnail as image
+	if oembed.ThumbnailURL != "" {
+		metadata.Images = append(metadata.Images, Image{
+			URL:    oembed.ThumbnailURL,
+			Width:  oembed.ThumbnailWidth,
+			Height: oembed.ThumbnailHeight,
+		})
+	}
+
+	// For photo type, add the photo URL
+	if oembed.Type == "photo" && oembed.URL != "" {
+		metadata.Images = append(metadata.Images, Image{
+			URL:    oembed.URL,
+			Width:  oembed.Width,
+			Height: oembed.Height,
+		})
+	}
+
+	// Set type based on oEmbed
+	metadata.Type = oembed.Type
+
+	// OPTIMIZATION: We already have enough data from oEmbed!
+	// Skip HTML fetching unless user explicitly needs it
+	// This saves 1 HTTP call and parsing time!
+
+	return metadata, nil
+}
+
+// extractHTMLOnly extracts metadata from HTML only
+func (c *Client) extractHTMLOnly(targetURL string, parsedURL *url.URL) (*Metadata, error) {
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -170,7 +281,11 @@ func (c *Client) Extract(targetURL string) (*Metadata, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
@@ -191,7 +306,7 @@ func (c *Client) Extract(targetURL string) (*Metadata, error) {
 	}
 
 	metadata := &Metadata{
-		URL:             resp.Request.URL.String(), // Use final URL after redirects
+		URL:             resp.Request.URL.String(),
 		ProviderURL:     fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host),
 		ProviderDisplay: parsedURL.Host,
 		Images:          []Image{},
@@ -202,43 +317,22 @@ func (c *Client) Extract(targetURL string) (*Metadata, error) {
 	extractFromNode(doc, metadata, parsedURL)
 
 	// Post-processing
+	if metadata.OGTitle != "" {
+		metadata.Title = metadata.OGTitle
+	} else if metadata.TwitterTitle != "" {
+		metadata.Title = metadata.TwitterTitle
+	}
+
 	metadata.Title = strings.TrimSpace(metadata.Title)
 	metadata.Description = strings.TrimSpace(metadata.Description)
-	
-	// Set provider name from site name if available
+
 	if metadata.SiteName != "" {
 		metadata.ProviderName = metadata.SiteName
 	} else {
 		metadata.ProviderName = parsedURL.Host
 	}
 
-	// Auto-fetch oEmbed if enabled and supported
-	if c.autoOEmbed {
-		oembed, err := c.extractOEmbedQuietly(resp.Request.URL.String())
-		if err == nil && oembed != nil {
-			metadata.OEmbed = oembed
-		}
-	}
-
 	return metadata, nil
-}
-
-// extractOEmbedQuietly attempts to extract oEmbed without returning errors
-func (c *Client) extractOEmbedQuietly(targetURL string) (*OEmbed, error) {
-	// Try to find oEmbed endpoint from known providers
-	endpoint := findOEmbedEndpoint(targetURL)
-	if endpoint != "" {
-		oembed, err := c.fetchOEmbed(endpoint, targetURL)
-		if err == nil {
-			return oembed, nil
-		}
-	}
-
-	// Try oEmbed discovery from HTML (already parsed, but we'll skip for performance)
-	// Discovery would require another HTTP request, so we skip it in auto mode
-	// Users can still call ExtractOEmbed() explicitly if needed
-
-	return nil, fmt.Errorf("oEmbed not available")
 }
 
 // Extract is a convenience function using default client
@@ -257,6 +351,7 @@ func normalizeURL(targetURL string) string {
 
 // extractFromNode traverses HTML nodes to find meta tags
 func extractFromNode(n *html.Node, metadata *Metadata, baseURL *url.URL) {
+	title := ""
 	if n.Type == html.ElementNode {
 		switch n.Data {
 		case "title":
@@ -272,6 +367,10 @@ func extractFromNode(n *html.Node, metadata *Metadata, baseURL *url.URL) {
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		extractFromNode(c, metadata, baseURL)
+	}
+
+	if metadata.Title == "" {
+		metadata.Title = title
 	}
 }
 
@@ -297,22 +396,15 @@ func processMeta(n *html.Node, metadata *Metadata, baseURL *url.URL) {
 		return
 	}
 
-	// Open Graph Protocol
 	if property != "" {
 		processOpenGraph(property, content, metadata, baseURL)
 	}
 
-	// Twitter Cards
 	if name != "" {
 		processTwitterCard(name, content, metadata, baseURL)
-	}
-
-	// Standard meta tags
-	if name != "" {
 		processStandardMeta(name, content, metadata)
 	}
 
-	// Schema.org microdata
 	if itemProp != "" {
 		processItemProp(itemProp, content, metadata)
 	}
@@ -322,6 +414,7 @@ func processMeta(n *html.Node, metadata *Metadata, baseURL *url.URL) {
 func processOpenGraph(property, content string, metadata *Metadata, baseURL *url.URL) {
 	switch property {
 	case "og:title":
+		metadata.OGTitle = content
 		if metadata.Title == "" {
 			metadata.Title = content
 		}
@@ -332,17 +425,9 @@ func processOpenGraph(property, content string, metadata *Metadata, baseURL *url
 	case "og:image", "og:image:url":
 		metadata.Images = append(metadata.Images, Image{URL: resolveURL(content, baseURL)})
 	case "og:image:width":
-		if len(metadata.Images) > 0 {
-			if w := parseInt(content); w > 0 {
-				metadata.Images[len(metadata.Images)-1].Width = w
-			}
-		}
+		processImageDimension(metadata, content, true)
 	case "og:image:height":
-		if len(metadata.Images) > 0 {
-			if h := parseInt(content); h > 0 {
-				metadata.Images[len(metadata.Images)-1].Height = h
-			}
-		}
+		processImageDimension(metadata, content, false)
 	case "og:video", "og:video:url":
 		metadata.Videos = append(metadata.Videos, Video{URL: resolveURL(content, baseURL)})
 	case "og:video:type":
@@ -370,6 +455,20 @@ func processOpenGraph(property, content string, metadata *Metadata, baseURL *url
 	}
 }
 
+// processImageDimension handles image width/height
+func processImageDimension(metadata *Metadata, content string, isWidth bool) {
+	if len(metadata.Images) > 0 {
+		dimension := parseInt(content)
+		if dimension > 0 {
+			if isWidth {
+				metadata.Images[len(metadata.Images)-1].Width = dimension
+			} else {
+				metadata.Images[len(metadata.Images)-1].Height = dimension
+			}
+		}
+	}
+}
+
 // processTwitterCard handles Twitter Card tags
 func processTwitterCard(name, content string, metadata *Metadata, baseURL *url.URL) {
 	switch name {
@@ -380,6 +479,7 @@ func processTwitterCard(name, content string, metadata *Metadata, baseURL *url.U
 	case "twitter:creator":
 		metadata.TwitterCreator = content
 	case "twitter:title":
+		metadata.TwitterTitle = content
 		if metadata.Title == "" {
 			metadata.Title = content
 		}
@@ -481,6 +581,9 @@ func resolveURL(href string, baseURL *url.URL) string {
 // parseInt safely converts string to int
 func parseInt(s string) int {
 	var i int
-	fmt.Sscanf(s, "%d", &i)
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
 	return i
 }

@@ -10,35 +10,241 @@ import (
 )
 
 func main() {
-	fmt.Println("URLMeta - Advanced Example")
-	fmt.Println("==========================\n")
+	fmt.Println("URLMeta - Advanced Features")
+	fmt.Println("===========================")
 
-	// Create a custom client with options
+	// Example 1: Custom Client Configuration
+	demonstrateCustomConfig()
+
+	// Example 2: Manual oEmbed Control
+	demonstrateManualOEmbed()
+
+	// Example 3: Provider Support Checking
+	demonstrateProviderChecking()
+
+	// Example 4: JSON Export
+	demonstrateJSONExport()
+
+	// Example 5: Error Handling
+	demonstrateErrorHandling()
+}
+
+func demonstrateCustomConfig() {
+	fmt.Println("=== 1. Custom Client Configuration ===")
+
+	// Create client with custom options
 	client := urlmeta.NewClient(
 		urlmeta.WithTimeout(15*time.Second),
 		urlmeta.WithUserAgent("MyCustomBot/1.0 (+https://mywebsite.com)"),
 		urlmeta.WithMaxRedirects(5),
+		urlmeta.WithAutoOEmbed(true), // Auto oEmbed enabled (default)
 	)
 
-	// Extract metadata
 	url := "https://www.theverge.com"
-	fmt.Printf("Extracting metadata from: %s\n\n", url)
+	fmt.Printf("Extracting: %s\n", url)
 
 	metadata, err := client.Extract(url)
 	if err != nil {
-		log.Fatalf("Failed to extract metadata: %v", err)
+		log.Printf("Error: %v\n", err)
+		return
 	}
 
-	// Display full metadata as JSON
-	fmt.Println("=== Full Metadata (JSON) ===")
-	displayJSON(metadata)
+	fmt.Printf("✅ Title: %s\n", metadata.Title)
+	fmt.Printf("✅ Provider: %s\n", metadata.ProviderName)
+	fmt.Printf("✅ Images: %d\n", len(metadata.Images))
+	fmt.Printf("✅ oEmbed: %v\n\n", metadata.OEmbed != nil)
+}
 
-	fmt.Println("\n=== Structured Display ===")
-	displayStructured(metadata)
+func demonstrateManualOEmbed() {
+	fmt.Println("=== 2. Manual oEmbed Control ===")
 
-	// Save to file example
-	fmt.Println("\n=== Saving to JSON file ===")
-	saveToFile(metadata, "metadata.json")
+	youtubeURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+	// Option A: Auto oEmbed (default behavior)
+	fmt.Println("A) Auto Mode (default):")
+	metadata1, _ := urlmeta.Extract(youtubeURL)
+	fmt.Printf("   Extract() called once\n")
+	fmt.Printf("   metadata.OEmbed available: %v\n", metadata1.OEmbed != nil)
+	if metadata1.OEmbed != nil {
+		fmt.Printf("   Embed type: %s\n", metadata1.OEmbed.Type)
+		fmt.Printf("   Has HTML: %v\n", metadata1.OEmbed.HTML != "")
+	}
+
+	// Option B: Disable auto oEmbed for faster extraction
+	fmt.Println("\nB) Manual Mode (auto disabled):")
+	client := urlmeta.NewClient(
+		urlmeta.WithAutoOEmbed(false), // Disable auto oEmbed
+		urlmeta.WithTimeout(5*time.Second),
+	)
+
+	metadata2, _ := client.Extract(youtubeURL)
+	fmt.Printf("   Extract() called - fast mode\n")
+	fmt.Printf("   metadata.OEmbed: %v (disabled)\n", metadata2.OEmbed)
+
+	// Explicitly extract oEmbed when needed
+	oembed, err := client.ExtractOEmbed(youtubeURL)
+	if err != nil {
+		fmt.Printf("   ExtractOEmbed() error: %v\n", err)
+	} else {
+		fmt.Printf("   ExtractOEmbed() called explicitly\n")
+		fmt.Printf("   Embed type: %s\n", oembed.Type)
+		fmt.Printf("   Author: %s\n\n", oembed.AuthorName)
+	}
+}
+
+func demonstrateProviderChecking() {
+	fmt.Println("=== 3. Provider Support Checking ===")
+
+	// Check if specific URLs support oEmbed
+	testURLs := []string{
+		"https://www.youtube.com/watch?v=123",
+		"https://vimeo.com/123456",
+		"https://twitter.com/user/status/123",
+		"https://github.com/golang/go",
+		"https://soundcloud.com/artist/track",
+		"https://example.com/random",
+	}
+
+	fmt.Println("Checking oEmbed support:")
+	for _, url := range testURLs {
+		supported := urlmeta.IsOEmbedSupported(url)
+		status := "❌"
+		if supported {
+			status = "✅"
+		}
+		fmt.Printf("%s %s\n", status, url)
+	}
+
+	// List all supported providers
+	fmt.Println("\nSupported oEmbed Providers:")
+	providers := urlmeta.GetSupportedProviders()
+	for i, provider := range providers {
+		fmt.Printf("%d. %s - %s\n", i+1, provider.Name, provider.URL)
+	}
+	fmt.Println()
+}
+
+func demonstrateJSONExport() {
+	fmt.Println("=== 4. JSON Export ===")
+
+	url := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+	metadata, err := urlmeta.Extract(url)
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		return
+	}
+
+	// Export to pretty JSON
+	jsonData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		log.Printf("JSON marshal error: %v\n", err)
+		return
+	}
+
+	fmt.Println("Full metadata as JSON:")
+	fmt.Println(string(jsonData))
+	fmt.Println()
+
+	// In production, you might save to file:
+	// err = os.WriteFile("metadata.json", jsonData, 0644)
+}
+
+func demonstrateErrorHandling() {
+	fmt.Println("\n=== 5. Error Handling ===")
+
+	testCases := []struct {
+		url         string
+		description string
+	}{
+		{"invalid-url", "Invalid URL format"},
+		{"ftp://example.com", "Unsupported protocol"},
+		{"https://this-domain-definitely-does-not-exist-12345.com", "Network error"},
+		{"https://httpstat.us/404", "HTTP 404 error"},
+	}
+
+	for _, tc := range testCases {
+		fmt.Printf("Testing: %s\n", tc.description)
+		fmt.Printf("URL: %s\n", tc.url)
+
+		_, err := urlmeta.Extract(tc.url)
+		if err != nil {
+			fmt.Printf("❌ Error (expected): %v\n", err)
+		} else {
+			fmt.Printf("✅ Success (unexpected)\n")
+		}
+		fmt.Println()
+	}
+}
+
+// Production example: Conditional rendering based on metadata
+func renderContent(metadata *urlmeta.Metadata) string {
+	// If embeddable content is available, use it
+	if metadata.OEmbed != nil && metadata.OEmbed.HTML != "" {
+		return fmt.Sprintf(`
+<div class="embed-container">
+  %s
+</div>`, metadata.OEmbed.HTML)
+	}
+
+	// Otherwise, create a link preview card
+	imageHTML := ""
+	if len(metadata.Images) > 0 {
+		imageHTML = fmt.Sprintf(`<img src="%s" alt="%s">`,
+			metadata.Images[0].URL, metadata.Title)
+	}
+
+	return fmt.Sprintf(`
+<div class="link-preview">
+  %s
+  <h3>%s</h3>
+  <p>%s</p>
+  <span class="provider">%s</span>
+</div>`, imageHTML, metadata.Title, metadata.Description, metadata.ProviderName)
+}
+
+// Production example: Batch processing with error handling
+func processBatchURLs(urls []string) map[string]*urlmeta.Metadata {
+	client := urlmeta.NewClient(
+		urlmeta.WithTimeout(10 * time.Second),
+	)
+
+	results := make(map[string]*urlmeta.Metadata)
+
+	for _, url := range urls {
+		metadata, err := client.Extract(url)
+		if err != nil {
+			log.Printf("Failed to extract %s: %v", url, err)
+			continue
+		}
+		results[url] = metadata
+	}
+
+	return results
+}
+
+// Production example: Smart content display
+func displaySmartPreview(url string) {
+	metadata, err := urlmeta.Extract(url)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	// Use oEmbed if available (richer experience)
+	if metadata.OEmbed != nil {
+		fmt.Println("Rendering embedded content...")
+		fmt.Printf("Type: %s\n", metadata.OEmbed.Type)
+		fmt.Printf("Embed: %s\n", metadata.OEmbed.HTML)
+		return
+	}
+
+	// Fallback to standard preview
+	fmt.Println("Rendering link preview...")
+	fmt.Printf("Title: %s\n", metadata.Title)
+	fmt.Printf("Description: %s\n", metadata.Description)
+	if len(metadata.Images) > 0 {
+		fmt.Printf("Image: %s\n", metadata.Images[0].URL)
+	}
 }
 
 func displayJSON(m *urlmeta.Metadata) {

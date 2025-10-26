@@ -33,7 +33,7 @@ bench:
 ## lint: Run linter
 lint:
 	@echo "Running linter..."
-	golangci-lint run ./...
+	~/go/bin/golangci-lint run ./...
 
 ## fmt: Format code
 fmt:

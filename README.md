@@ -342,12 +342,6 @@ See [examples/](./examples/) directory for more usage examples:
 
 ## Performance
 
-```go
-// Benchmark results (on average hardware)
-BenchmarkExtract-8              100    10234567 ns/op
-BenchmarkExtractOEmbed-8        50     23456789 ns/op
-```
-
 Tips for better performance:
 - Reuse `Client` instances
 - Use appropriate timeouts
@@ -432,4 +426,4 @@ This is a server-side library, CORS doesn't apply. However, some APIs (like Inst
 
 ## License
 
-MIT License ©
+CC0 1.0 Universal — this project includes AI-assisted code and is released to the public domain.

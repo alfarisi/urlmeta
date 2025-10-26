@@ -6,7 +6,10 @@
 - [Types](#types)
 - [Functions](#functions)
 - [Options](#options)
+- [Extraction Strategies](#extraction-strategies)
+- [Provider Management](#provider-management)
 - [Error Handling](#error-handling)
+- [Performance](#performance)
 - [Examples](#examples)
 
 ## Quick Start
@@ -14,12 +17,20 @@
 ```go
 import "github.com/alfarisi/urlmeta"
 
-// Simple usage
-metadata, err := urlmeta.Extract("https://example.com")
+// Simple usage - auto-optimized!
+metadata, err := urlmeta.Extract("https://youtube.com/watch?v=...")
 if err != nil {
     log.Fatal(err)
 }
+
+// Standard metadata (always available)
 fmt.Println(metadata.Title)
+fmt.Println(metadata.Description)
+
+// oEmbed data (auto-included if available)
+if metadata.OEmbed != nil {
+    fmt.Println(metadata.OEmbed.HTML) // Embed code
+}
 ```
 
 ## Types
@@ -63,7 +74,284 @@ type Metadata struct {
     
     // Additional
     Favicon         string   `json:"favicon,omitempty"`
+    
+    // oEmbed (automatically included when available)
+    OEmbed          *OEmbed  `json:"oembed,omitempty"`
 }
+```
+
+### OEmbed
+
+oEmbed response structure following the [oEmbed specification](https://oembed.com/).
+
+```go
+type OEmbed struct {
+    Type            string `json:"type"`               // "photo", "video", "rich", "link"
+    Version         string `json:"version"`            // oEmbed version (usually "1.0")
+    Title           string `json:"title,omitempty"`
+    AuthorName      string `json:"author_name,omitempty"`
+    AuthorURL       string `json:"author_url,omitempty"`
+    ProviderName    string `json:"provider_name,omitempty"`
+    ProviderURL     string `json:"provider_url,omitempty"`
+    CacheAge        int    `json:"cache_age,omitempty"`
+    ThumbnailURL    string `json:"thumbnail_url,omitempty"`
+    ThumbnailWidth  int    `json:"thumbnail_width,omitempty"`
+    ThumbnailHeight int    `json:"thumbnail_height,omitempty"`
+    
+    // Photo type specific
+    URL             string `json:"url,omitempty"`
+    Width           int    `json:"width,omitempty"`
+    Height          int    `json:"height,omitempty"`
+    
+    // Video/Rich type specific
+    HTML            string `json:"html,omitempty"`     // Embed code
+}
+```
+
+### Image
+
+```go
+type Image struct {
+    URL    string `json:"url"`
+    Width  int    `json:"width,omitempty"`
+    Height int    `json:"height,omitempty"`
+    Alt    string `json:"alt,omitempty"`
+}
+```
+
+### Video
+
+```go
+type Video struct {
+    URL    string `json:"url"`
+    Type   string `json:"type,omitempty"`
+    Width  int    `json:"width,omitempty"`
+    Height int    `json:"height,omitempty"`
+}
+```
+
+### ExtractionStrategy
+
+```go
+type ExtractionStrategy int
+
+const (
+    StrategyAuto        ExtractionStrategy = iota  // Automatically chooses best strategy
+    StrategyOEmbedFirst                            // Try oEmbed first, fall back to HTML
+    StrategyHTMLOnly                               // Only extract from HTML
+)
+```
+
+## Functions
+
+### Extract
+
+```go
+func Extract(targetURL string) (*Metadata, error)
+```
+
+Extract metadata from a URL using default settings and automatic strategy selection.
+
+**Performance:**
+- YouTube/Vimeo: 1 HTTP call (oEmbed only)
+- GitHub/Blogs: 1 HTTP call (HTML only)
+- **Optimized automatically!**
+
+**Parameters:**
+- `targetURL`: The URL to extract metadata from (with or without `https://`)
+
+**Returns:**
+- `*Metadata`: Complete metadata including oEmbed if available
+- `error`: Error if extraction fails
+
+**Example:**
+```go
+metadata, err := urlmeta.Extract("youtube.com/watch?v=123")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(metadata.Title)
+if metadata.OEmbed != nil {
+    fmt.Println("Embeddable:", metadata.OEmbed.Type)
+}
+```
+
+### NewClient
+
+```go
+func NewClient(opts ...Option) *Client
+```
+
+Create a new client with custom options.
+
+**Parameters:**
+- `opts`: Variable number of Option functions
+
+**Returns:**
+- `*Client`: Configured client instance
+
+**Example:**
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(15 * time.Second),
+    urlmeta.WithUserAgent("MyBot/1.0"),
+    urlmeta.WithStrategy(urlmeta.StrategyOEmbedFirst),
+)
+```
+
+### Client.Extract
+
+```go
+func (c *Client) Extract(targetURL string) (*Metadata, error)
+```
+
+Extract metadata using the configured client.
+
+**Example:**
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(5 * time.Second),
+)
+metadata, err := client.Extract("https://example.com")
+```
+
+### Client.ExtractOEmbed
+
+```go
+func (c *Client) ExtractOEmbed(targetURL string) (*OEmbed, error)
+```
+
+Explicitly extract only oEmbed data (bypasses automatic strategy).
+
+**Use when:**
+- You only need embed code
+- Testing oEmbed endpoints
+- Custom workflows
+
+**Example:**
+```go
+oembed, err := client.ExtractOEmbed("https://youtube.com/watch?v=123")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(oembed.HTML)
+```
+
+## Options
+
+### WithTimeout
+
+```go
+func WithTimeout(timeout time.Duration) Option
+```
+
+Set custom timeout for HTTP requests (default: 10 seconds).
+
+**Example:**
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(30 * time.Second),
+)
+```
+
+### WithUserAgent
+
+```go
+func WithUserAgent(ua string) Option
+```
+
+Set custom User-Agent header.
+
+**Best Practice:** Identify your bot with contact info:
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithUserAgent("MyBot/1.0 (+https://mywebsite.com/bot)"),
+)
+```
+
+### WithMaxRedirects
+
+```go
+func WithMaxRedirects(max int) Option
+```
+
+Set maximum number of redirects to follow (default: 10).
+
+**Example:**
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithMaxRedirects(5),
+)
+```
+
+### WithHTTPClient
+
+```go
+func WithHTTPClient(client *http.Client) Option
+```
+
+Use a custom HTTP client (for proxies, custom TLS, etc.).
+
+**Example:**
+```go
+customClient := &http.Client{
+    Transport: &http.Transport{
+        Proxy: http.ProxyFromEnvironment,
+    },
+}
+
+client := urlmeta.NewClient(
+    urlmeta.WithHTTPClient(customClient),
+)
+```
+
+### WithAutoOEmbed
+
+```go
+func WithAutoOEmbed(auto bool) Option
+```
+
+Enable/disable automatic oEmbed extraction (default: true).
+
+**When to disable:**
+- You don't need embed functionality
+- Want faster extraction for non-embeddable sites
+- Custom oEmbed handling
+
+**Example:**
+```go
+// Disable auto oEmbed
+client := urlmeta.NewClient(
+    urlmeta.WithAutoOEmbed(false),
+)
+```
+
+### WithStrategy
+
+```go
+func WithStrategy(strategy ExtractionStrategy) Option
+```
+
+Set extraction strategy (default: StrategyAuto).
+
+**Strategies:**
+- `StrategyAuto`: Smart selection (recommended)
+- `StrategyOEmbedFirst`: Always try oEmbed first
+- `StrategyHTMLOnly`: Skip oEmbed completely
+
+**Example:**
+```go
+// Force HTML-only extraction (fastest for blogs)
+client := urlmeta.NewClient(
+    urlmeta.WithStrategy(urlmeta.StrategyHTMLOnly),
+)
+```
+
+## Extraction Strategies
+
+URLMeta uses intelligent strategies to minimize HTTP requests.
+
+### StrategyAuto (Default, Recommended)
 ```
 
 **Fields:**
@@ -307,28 +595,321 @@ _, err := urlmeta.Extract("https://example.com/data.json")
 
 ## Examples
 
-### Basic Usage
+### StrategyAuto (Default, Recommended)
+
+Automatically chooses the best strategy:
+- If oEmbed supported (YouTube, Vimeo, etc.) → Use `StrategyOEmbedFirst`
+- Otherwise → Use `StrategyHTMLOnly`
+
+**Result: Always 1 HTTP call, optimal for all sites!**
+
+### StrategyOEmbedFirst
+
+1. Check oEmbed support (pattern match, ~0ms)
+2. Fetch oEmbed data (1 HTTP call)
+3. Build metadata from oEmbed response
+4. **Skip HTML fetching** (saves bandwidth & time!)
+
+**Best for:** Known embeddable content (YouTube, Vimeo, Twitter)
+
+### StrategyHTMLOnly
+
+1. Fetch HTML (1 HTTP call)
+2. Parse metadata
+3. Skip oEmbed completely
+
+**Best for:** Blogs, news sites, documentation
+
+## Provider Management
+
+### IsOEmbedSupported
 
 ```go
-package main
+func IsOEmbedSupported(targetURL string) bool
+```
 
-import (
-    "fmt"
-    "log"
-    
-    "github.com/alfarisi/urlmeta"
-)
+Check if a URL supports oEmbed.
 
-func main() {
-    metadata, err := urlmeta.Extract("https://github.com")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    fmt.Println("Title:", metadata.Title)
-    fmt.Println("Description:", metadata.Description)
+**Example:**
+```go
+if urlmeta.IsOEmbedSupported("https://youtube.com/watch?v=123") {
+    fmt.Println("oEmbed available!")
 }
 ```
+
+### GetSupportedProviders
+
+```go
+func GetSupportedProviders() []OEmbedProvider
+```
+
+Get list of all supported oEmbed providers.
+
+**Example:**
+```go
+providers := urlmeta.GetSupportedProviders()
+for _, p := range providers {
+    fmt.Printf("%s - %s\n", p.Name, p.URL)
+}
+```
+
+### GetKnownProviders
+
+```go
+func GetKnownProviders() []OEmbedProvider
+```
+
+Get a copy of known providers (same as `GetSupportedProviders`).
+
+### AddCustomProvider
+
+```go
+func AddCustomProvider(provider OEmbedProvider)
+```
+
+Add custom oEmbed provider at runtime.
+
+**Use for:**
+- Private/internal video services
+- New providers not yet in the list
+- Testing custom endpoints
+
+**Example:**
+```go
+custom := urlmeta.OEmbedProvider{
+    Name: "MyVideos",
+    URL:  "https://videos.mycompany.com",
+    Endpoints: []urlmeta.OEmbedEndpoint{
+        {
+            Schemes: []string{"https://videos.mycompany.com/watch/*"},
+            URL:     "https://videos.mycompany.com/oembed",
+        },
+    },
+}
+
+urlmeta.AddCustomProvider(custom)
+
+// Now works!
+metadata, _ := urlmeta.Extract("https://videos.mycompany.com/watch/123")
+```
+
+### ProviderCount
+
+```go
+func ProviderCount() int
+```
+
+Get the number of supported providers.
+
+### IsProviderSupported
+
+```go
+func IsProviderSupported(providerName string) bool
+```
+
+Check if a specific provider is supported.
+
+**Example:**
+```go
+if urlmeta.IsProviderSupported("YouTube") {
+    fmt.Println("YouTube is supported")
+}
+```
+
+### GetProviderByName
+
+```go
+func GetProviderByName(name string) *OEmbedProvider
+```
+
+Get provider details by name.
+
+**Example:**
+```go
+youtube := urlmeta.GetProviderByName("YouTube")
+if youtube != nil {
+    fmt.Printf("Endpoints: %d\n", len(youtube.Endpoints))
+}
+```
+
+## Error Handling
+
+The library returns descriptive errors:
+
+### Invalid URL
+```go
+_, err := urlmeta.Extract("not-a-valid-url")
+// err: "invalid URL: ..."
+```
+
+### Unsupported Protocol
+```go
+_, err := urlmeta.Extract("ftp://example.com")
+// err: "unsupported protocol: ftp (only http and https are supported)"
+```
+
+### HTTP Errors
+```go
+_, err := urlmeta.Extract("https://example.com/404")
+// err: "HTTP error: 404 Not Found"
+```
+
+### Network Errors
+```go
+_, err := urlmeta.Extract("https://nonexistent-domain-12345.com")
+// err: "failed to fetch URL: ..."
+```
+
+### Timeout
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(1 * time.Millisecond),
+)
+_, err := client.Extract("https://slow-website.com")
+// err: context deadline exceeded
+```
+
+### Unsupported Content Type
+```go
+_, err := urlmeta.Extract("https://example.com/data.json")
+// err: "unsupported content type: application/json"
+```
+
+## Performance
+
+### Best Practices
+
+#### 1. Reuse Client
+```go
+// ✅ Good - Reuse client
+client := urlmeta.NewClient()
+for _, url := range urls {
+    metadata, _ := client.Extract(url)
+}
+
+// ❌ Bad - Creates new client each time
+for _, url := range urls {
+    metadata, _ := urlmeta.Extract(url)
+}
+```
+
+#### 2. Use Appropriate Timeout
+```go
+// For fast responses
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(5 * time.Second),
+)
+
+// For slow websites
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(30 * time.Second),
+)
+```
+
+#### 3. Concurrent Processing
+```go
+// Process multiple URLs concurrently
+client := urlmeta.NewClient()
+var wg sync.WaitGroup
+
+for _, url := range urls {
+    wg.Add(1)
+    go func(u string) {
+        defer wg.Done()
+        metadata, _ := client.Extract(u)
+        // Process metadata...
+    }(url)
+}
+
+wg.Wait()
+```
+
+### Performance Metrics
+
+| Metric | YouTube (oEmbed) | GitHub (HTML) |
+|--------|-----------------|---------------|
+| HTTP Calls | 1 | 1 |
+| Time | ~100ms | ~150ms |
+| Bandwidth | ~2KB | ~25KB |
+| Memory | ~4KB | ~30KB |
+
+## Examples
+
+See complete examples in the [examples/](../examples/) directory.
+
+## Supported Meta Tags
+
+### OpenGraph Protocol
+- `og:title`, `og:description`, `og:image`, `og:video`
+- `og:site_name`, `og:type`, `og:url`, `og:locale`
+- `article:published_time`, `article:modified_time`, `article:author`
+
+### Twitter Cards
+- `twitter:card`, `twitter:site`, `twitter:creator`
+- `twitter:title`, `twitter:description`, `twitter:image`
+
+### Standard HTML
+- `<title>`, `name="description"`, `name="author"`, `name="keywords"`
+- `<link rel="icon">`, `<link rel="canonical">`
+
+### Schema.org
+- `itemprop="name"`, `itemprop="description"`, `itemprop="image"`
+
+## Limitations
+
+- **Content Types**: Only HTML/XHTML supported
+- **Protocols**: HTTP and HTTPS only
+- **Body Size**: Limited to 10MB
+- **JavaScript**: Not executed (static HTML only)
+- **Dynamic Content**: Cannot extract AJAX-loaded content
+
+## Best Practices
+
+1. **Always handle errors** - Network requests can fail
+2. **Set appropriate timeouts** - Don't wait forever
+3. **Reuse clients** - Better performance
+4. **Use custom User-Agent** - Identify your bot properly
+5. **Respect robots.txt** - Be a good web citizen
+6. **Rate limit requests** - Don't overwhelm servers
+7. **Cache results** - Avoid unnecessary requests
+
+## Troubleshooting
+
+### "unsupported protocol" error
+Use `http://` or `https://` protocol. FTP and other protocols are not supported.
+
+### "HTTP error: 403" error
+The site may be blocking the default User-Agent. Try setting a custom one:
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithUserAgent("MyBot/1.0 (+https://mywebsite.com)"),
+)
+```
+
+### "timeout" error
+Increase the timeout value:
+```go
+client := urlmeta.NewClient(
+    urlmeta.WithTimeout(30 * time.Second),
+)
+```
+
+### Empty metadata
+- The site may not have proper meta tags
+- Check if the site requires JavaScript
+- Verify the HTML structure
+
+### No oEmbed data
+- Check if provider is supported: `urlmeta.IsOEmbedSupported(url)`
+- Try manual extraction: `client.ExtractOEmbed(url)`
+- Provider might have rate limits
+
+## See Also
+
+- [README.md](../README.md) - Overview and quick start
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - How to contribute
+- [Examples](../examples/) - Working code exampleslog"
+
 
 ### Custom Configuration
 

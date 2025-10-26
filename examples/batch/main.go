@@ -19,7 +19,7 @@ type Result struct {
 
 func main() {
 	fmt.Println("URLMeta - Batch Processing Example")
-	fmt.Println("===================================\n")
+	fmt.Println("===================================")
 
 	// List of URLs to process
 	urls := []string{

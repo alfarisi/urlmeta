@@ -420,7 +420,7 @@ func TestAutoOEmbedEnabled(t *testing.T) {
 	// This test would need mock oEmbed endpoint
 	// For now, we just test that the field exists
 	client := NewClient(WithAutoOEmbed(true))
-	
+
 	if !client.autoOEmbed {
 		t.Error("Expected autoOEmbed to be true")
 	}
@@ -463,9 +463,7 @@ func TestEmptyMetadata(t *testing.T) {
 	// Should not crash, just return empty metadata
 	if metadata == nil {
 		t.Error("Expected metadata object, got nil")
-	}
-
-	if metadata.Title != "" {
+	} else if metadata.Title != "" {
 		t.Errorf("Expected empty title, got '%s'", metadata.Title)
 	}
 }

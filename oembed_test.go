@@ -76,12 +76,12 @@ func TestExtractOEmbed(t *testing.T) {
 	client := NewClient()
 
 	// Test with discovery URL pointing to our mock server
-	client.httpClient = &http.Client{
+	/*client.httpClient = &http.Client{
 		Transport: &mockTransport{
 			contentURL: contentServer.URL,
 			oembedURL:  oembedServer.URL + "/oembed",
 		},
-	}
+	}*/
 
 	oembed, err := client.ExtractOEmbed(contentServer.URL)
 	if err != nil {
@@ -294,7 +294,7 @@ func TestMatchScheme(t *testing.T) {
 }
 
 // mockTransport is a custom RoundTripper for testing
-type mockTransport struct {
+/*type mockTransport struct {
 	contentURL string
 	oembedURL  string
 }
@@ -308,7 +308,7 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}, nil
 	}
 	return http.DefaultTransport.RoundTrip(req)
-}
+}*/
 
 func BenchmarkExtractOEmbed(b *testing.B) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
