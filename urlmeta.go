@@ -412,47 +412,92 @@ func processMeta(n *html.Node, metadata *Metadata, baseURL *url.URL) {
 
 // processOpenGraph handles Open Graph tags
 func processOpenGraph(property, content string, metadata *Metadata, baseURL *url.URL) {
-	switch property {
-	case "og:title":
+	// Map of simple string assignments
+	simpleAssignments := map[string]*string{
+		"og:site_name":           &metadata.SiteName,
+		"og:type":                &metadata.Type,
+		"og:locale":              &metadata.Locale,
+		"article:published_time": &metadata.PublishedTime,
+		"article:modified_time":  &metadata.ModifiedTime,
+	}
+
+	// Handle simple string assignments
+	if target := simpleAssignments[property]; target != nil {
+		*target = content
+		return
+	}
+
+	// Handle title with fallback
+	if property == "og:title" {
 		metadata.OGTitle = content
 		if metadata.Title == "" {
 			metadata.Title = content
 		}
-	case "og:description":
+		return
+	}
+
+	// Handle description with fallback
+	if property == "og:description" {
 		if metadata.Description == "" {
 			metadata.Description = content
 		}
+		return
+	}
+
+	// Handle URL/canonical
+	if property == "og:url" {
+		if metadata.CanonicalURL == "" {
+			metadata.CanonicalURL = content
+		}
+		return
+	}
+
+	// Handle author with fallback
+	if property == "article:author" {
+		if metadata.Author == "" {
+			metadata.Author = content
+		}
+		return
+	}
+
+	// Handle images
+	if processOpenGraphImage(property, content, metadata, baseURL) {
+		return
+	}
+
+	// Handle videos
+	processOpenGraphVideo(property, content, metadata, baseURL)
+}
+
+// processOpenGraphImage handles image-related Open Graph properties
+func processOpenGraphImage(property, content string, metadata *Metadata, baseURL *url.URL) bool {
+	switch property {
 	case "og:image", "og:image:url":
 		metadata.Images = append(metadata.Images, Image{URL: resolveURL(content, baseURL)})
+		return true
 	case "og:image:width":
 		processImageDimension(metadata, content, true)
+		return true
 	case "og:image:height":
 		processImageDimension(metadata, content, false)
+		return true
+	}
+	return false
+}
+
+// processOpenGraphVideo handles video-related Open Graph properties
+func processOpenGraphVideo(property, content string, metadata *Metadata, baseURL *url.URL) bool {
+	switch property {
 	case "og:video", "og:video:url":
 		metadata.Videos = append(metadata.Videos, Video{URL: resolveURL(content, baseURL)})
+		return true
 	case "og:video:type":
 		if len(metadata.Videos) > 0 {
 			metadata.Videos[len(metadata.Videos)-1].Type = content
 		}
-	case "og:site_name":
-		metadata.SiteName = content
-	case "og:type":
-		metadata.Type = content
-	case "og:url":
-		if metadata.CanonicalURL == "" {
-			metadata.CanonicalURL = content
-		}
-	case "og:locale":
-		metadata.Locale = content
-	case "article:published_time":
-		metadata.PublishedTime = content
-	case "article:modified_time":
-		metadata.ModifiedTime = content
-	case "article:author":
-		if metadata.Author == "" {
-			metadata.Author = content
-		}
+		return true
 	}
+	return false
 }
 
 // processImageDimension handles image width/height

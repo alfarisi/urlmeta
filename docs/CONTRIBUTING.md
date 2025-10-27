@@ -375,6 +375,7 @@ func BenchmarkExtract(b *testing.B) {
 When making changes, update:
 - `README.md` - User-facing changes
 - `docs/API.md` - API changes
+- `docs/PERFORMANCE.md` - Performance improvements
 - Code comments - Implementation details
 
 ### Documentation Style
@@ -507,6 +508,7 @@ urlmeta/
 ├── docs/
 │   ├── API.md
 │   ├── CONTRIBUTING.md  # This file
+│   └── PERFORMANCE.md
 └── examples/
     ├── basic/
     ├── advanced/
@@ -724,26 +726,14 @@ Always validate:
 
 - 💬 [Discussions](https://github.com/alfarisi/urlmeta/discussions) - Ask questions
 - 🐛 [Issues](https://github.com/alfarisi/urlmeta/issues) - Report bugs
-- 📧 Email - maintainer@example.com (for security issues)
 
 ## Recognition
 
-Contributors will be:
-- Listed in README.md
-- Mentioned in release notes
-- Added to AUTHORS file (if significant contributions)
-
-## Code of Conduct
-
-Be respectful, inclusive, and professional. We aim to foster a welcoming community.
+Contributors will be listed in README.md and release notes.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
-## Questions?
-
-Feel free to open an issue or discussion if you have questions about contributing!
+By contributing, you agree that your contributions will be licensed under the 0BSD License.
 
 ---
 
