@@ -75,14 +75,6 @@ func TestExtractOEmbed(t *testing.T) {
 
 	client := NewClient()
 
-	// Test with discovery URL pointing to our mock server
-	/*client.httpClient = &http.Client{
-		Transport: &mockTransport{
-			contentURL: contentServer.URL,
-			oembedURL:  oembedServer.URL + "/oembed",
-		},
-	}*/
-
 	oembed, err := client.ExtractOEmbed(contentServer.URL)
 	if err != nil {
 		t.Fatalf("ExtractOEmbed failed: %v", err)
@@ -258,57 +250,242 @@ func TestGetSupportedProviders(t *testing.T) {
 }
 
 func TestMatchScheme(t *testing.T) {
+	// Clear cache before testing
+	clearRegexCache()
+
 	tests := []struct {
+		name   string
 		url    string
 		scheme string
 		match  bool
 	}{
 		{
-			"https://www.youtube.com/watch?v=123",
-			"https://*.youtube.com/watch*",
-			true,
+			name:   "YouTube www with wildcard",
+			url:    "https://www.youtube.com/watch?v=123",
+			scheme: "https://*.youtube.com/watch*",
+			match:  true,
 		},
 		{
-			"https://youtu.be/123",
-			"https://youtu.be/*",
-			true,
+			name:   "YouTube mobile with wildcard",
+			url:    "https://m.youtube.com/watch?v=abc",
+			scheme: "https://*.youtube.com/watch*",
+			match:  true,
 		},
 		{
-			"https://vimeo.com/123",
-			"https://vimeo.com/*",
-			true,
+			name:   "YouTube short URL",
+			url:    "https://youtu.be/123",
+			scheme: "https://youtu.be/*",
+			match:  true,
 		},
 		{
-			"https://example.com/test",
-			"https://youtube.com/*",
-			false,
+			name:   "YouTube shorts",
+			url:    "https://www.youtube.com/shorts/abc123",
+			scheme: "https://*.youtube.com/shorts/*",
+			match:  true,
+		},
+		{
+			name:   "Vimeo video",
+			url:    "https://vimeo.com/123456",
+			scheme: "https://vimeo.com/*",
+			match:  true,
+		},
+		{
+			name:   "Vimeo groups",
+			url:    "https://vimeo.com/groups/test/videos/123",
+			scheme: "https://vimeo.com/groups/*/videos/*",
+			match:  true,
+		},
+		{
+			name:   "Twitter status",
+			url:    "https://twitter.com/user/status/123456",
+			scheme: "https://twitter.com/*/status/*",
+			match:  true,
+		},
+		{
+			name:   "X.com (new Twitter)",
+			url:    "https://x.com/user/status/123456",
+			scheme: "https://x.com/*/status/*",
+			match:  true,
+		},
+		{
+			name:   "Wrong domain",
+			url:    "https://example.com/test",
+			scheme: "https://youtube.com/*",
+			match:  false,
+		},
+		{
+			name:   "Wrong path",
+			url:    "https://youtube.com/about",
+			scheme: "https://youtube.com/watch*",
+			match:  false,
+		},
+		{
+			name:   "HTTP vs HTTPS",
+			url:    "http://youtube.com/watch",
+			scheme: "https://youtube.com/watch*",
+			match:  false,
+		},
+		{
+			name:   "Subdomain mismatch",
+			url:    "https://api.youtube.com/watch",
+			scheme: "https://www.youtube.com/watch*",
+			match:  false,
 		},
 	}
 
 	for _, tt := range tests {
-		result := matchScheme(tt.url, tt.scheme)
-		if result != tt.match {
-			t.Errorf("matchScheme(%s, %s) = %v, expected %v", tt.url, tt.scheme, result, tt.match)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchScheme(tt.url, tt.scheme)
+			if result != tt.match {
+				t.Errorf("matchScheme(%s, %s) = %v, expected %v",
+					tt.url, tt.scheme, result, tt.match)
+			}
+		})
 	}
 }
 
-// mockTransport is a custom RoundTripper for testing
-/*type mockTransport struct {
-	contentURL string
-	oembedURL  string
+func TestMatchSchemeEdgeCases(t *testing.T) {
+	clearRegexCache()
+
+	tests := []struct {
+		name   string
+		url    string
+		scheme string
+		match  bool
+	}{
+		{
+			name:   "Empty URL",
+			url:    "",
+			scheme: "https://youtube.com/*",
+			match:  false,
+		},
+		{
+			name:   "Empty scheme",
+			url:    "https://youtube.com/watch",
+			scheme: "",
+			match:  false,
+		},
+		{
+			name:   "Invalid URL format",
+			url:    "not-a-valid-url",
+			scheme: "https://youtube.com/*",
+			match:  false,
+		},
+		{
+			name:   "Scheme without wildcard",
+			url:    "https://youtube.com/watch",
+			scheme: "https://youtube.com/watch",
+			match:  true,
+		},
+		{
+			name:   "Multiple wildcards",
+			url:    "https://www.youtube.com/watch?v=123&t=10",
+			scheme: "https://*.youtube.com/watch*",
+			match:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchScheme(tt.url, tt.scheme)
+			if result != tt.match {
+				t.Errorf("matchScheme(%s, %s) = %v, expected %v",
+					tt.url, tt.scheme, result, tt.match)
+			}
+		})
+	}
 }
 
-func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if strings.Contains(req.URL.String(), "/oembed") {
-		return &http.Response{
-			StatusCode: 200,
-			Body:       http.NoBody,
-			Header:     make(http.Header),
-		}, nil
+func TestRegexCaching(t *testing.T) {
+	clearRegexCache()
+
+	scheme := "https://*.youtube.com/watch*"
+	url := "https://www.youtube.com/watch?v=123"
+
+	// First call - should compile regex
+	result1 := matchScheme(url, scheme)
+	if !result1 {
+		t.Error("First match should succeed")
 	}
-	return http.DefaultTransport.RoundTrip(req)
-}*/
+
+	// Second call - should use cached regex
+	result2 := matchScheme(url, scheme)
+	if !result2 {
+		t.Error("Cached match should succeed")
+	}
+
+	// Verify cache contains the scheme
+	regexCacheMutex.RLock()
+	_, exists := regexCache[scheme]
+	regexCacheMutex.RUnlock()
+
+	if !exists {
+		t.Error("Regex should be cached after first use")
+	}
+
+	// Clear cache and verify
+	clearRegexCache()
+
+	regexCacheMutex.RLock()
+	cacheSize := len(regexCache)
+	regexCacheMutex.RUnlock()
+
+	if cacheSize != 0 {
+		t.Errorf("Cache should be empty after clear, got %d items", cacheSize)
+	}
+}
+
+func TestSchemeToRegex(t *testing.T) {
+	tests := []struct {
+		name     string
+		scheme   string
+		testURL  string
+		expected bool
+	}{
+		{
+			name:     "Domain wildcard",
+			scheme:   "https://*.youtube.com/watch",
+			testURL:  "https://www.youtube.com/watch",
+			expected: true,
+		},
+		{
+			name:     "Path wildcard",
+			scheme:   "https://youtu.be/*",
+			testURL:  "https://youtu.be/abc123",
+			expected: true,
+		},
+		{
+			name:     "Both wildcards",
+			scheme:   "https://*.youtube.com/watch*",
+			testURL:  "https://m.youtube.com/watch?v=123",
+			expected: true,
+		},
+		{
+			name:     "No wildcard",
+			scheme:   "https://youtube.com/watch",
+			testURL:  "https://youtube.com/watch",
+			expected: true,
+		},
+		{
+			name:     "Special chars in path",
+			scheme:   "https://example.com/path-with.dots/*",
+			testURL:  "https://example.com/path-with.dots/file",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearRegexCache()
+			result := matchScheme(tt.testURL, tt.scheme)
+			if result != tt.expected {
+				pattern := schemeToRegex(tt.scheme)
+				t.Errorf("matchScheme failed:\nScheme: %s\nRegex: %s\nURL: %s\nGot: %v, Expected: %v",
+					tt.scheme, pattern, tt.testURL, result, tt.expected)
+			}
+		})
+	}
+}
 
 func BenchmarkExtractOEmbed(b *testing.B) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -327,5 +504,52 @@ func BenchmarkExtractOEmbed(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = client.ExtractOEmbed(server.URL)
+	}
+}
+
+func BenchmarkMatchScheme(b *testing.B) {
+	clearRegexCache()
+
+	url := "https://www.youtube.com/watch?v=123"
+	scheme := "https://*.youtube.com/watch*"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matchScheme(url, scheme)
+	}
+}
+
+func BenchmarkMatchSchemeCached(b *testing.B) {
+	clearRegexCache()
+
+	url := "https://www.youtube.com/watch?v=123"
+	scheme := "https://*.youtube.com/watch*"
+
+	// Warm up cache
+	matchScheme(url, scheme)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matchScheme(url, scheme)
+	}
+}
+
+func BenchmarkMatchSchemeMultiplePatterns(b *testing.B) {
+	clearRegexCache()
+
+	testCases := []struct {
+		url    string
+		scheme string
+	}{
+		{"https://www.youtube.com/watch?v=123", "https://*.youtube.com/watch*"},
+		{"https://vimeo.com/123456", "https://vimeo.com/*"},
+		{"https://twitter.com/user/status/123", "https://twitter.com/*/status/*"},
+		{"https://youtu.be/abc", "https://youtu.be/*"},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tc := testCases[i%len(testCases)]
+		matchScheme(tc.url, tc.scheme)
 	}
 }

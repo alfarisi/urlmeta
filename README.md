@@ -248,6 +248,10 @@ for _, url := range urls {
 }
 ```
 
+## Cache Behavior
+
+URLMeta uses an internal regex cache for performance optimization. This is **safe and recommended** for most use cases.
+
 ## Examples
 
 Complete examples available in [examples/](./examples/):

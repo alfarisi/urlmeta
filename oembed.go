@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 )
@@ -96,24 +98,96 @@ func findOEmbedEndpoint(targetURL string) string {
 	return ""
 }
 
-// matchScheme checks if URL matches the scheme pattern
+// Cache compiled regexes for performance
+var (
+	regexCache      = make(map[string]*regexp.Regexp)
+	regexCacheMutex sync.RWMutex
+)
+
+// matchScheme checks if URL matches the scheme pattern using regex
+// Supports wildcards: *, *.domain.com, /path/*
+// Examples:
+//   - "https://*.youtube.com/watch*" matches "https://www.youtube.com/watch?v=123"
+//   - "https://youtu.be/*" matches "https://youtu.be/abc123"
 func matchScheme(targetURL, scheme string) bool {
-	// Simple pattern matching (can be improved with regex)
-	scheme = strings.Replace(scheme, "*", "", -1)
-	scheme = strings.Replace(scheme, "http://", "", 1)
-	scheme = strings.Replace(scheme, "https://", "", 1)
-
-	targetURL = strings.Replace(targetURL, "http://", "", 1)
-	targetURL = strings.Replace(targetURL, "https://", "", 1)
-
-	// Basic contains check (simplified)
-	parts := strings.Split(scheme, "/")
-	for _, part := range parts {
-		if part != "" && !strings.Contains(targetURL, part) {
-			return false
-		}
+	// Get or compile regex for this scheme
+	re := getCompiledRegex(scheme)
+	if re == nil {
+		return false
 	}
-	return true
+
+	return re.MatchString(targetURL)
+}
+
+// getCompiledRegex gets cached regex or compiles new one
+func getCompiledRegex(scheme string) *regexp.Regexp {
+	// Try to get from cache first (read lock)
+	regexCacheMutex.RLock()
+	if re, exists := regexCache[scheme]; exists {
+		regexCacheMutex.RUnlock()
+		return re
+	}
+	regexCacheMutex.RUnlock()
+
+	// Compile new regex (write lock)
+	regexCacheMutex.Lock()
+	defer regexCacheMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if re, exists := regexCache[scheme]; exists {
+		return re
+	}
+
+	// Convert scheme pattern to regex
+	pattern := schemeToRegex(scheme)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		// Invalid pattern, return nil
+		return nil
+	}
+
+	// Cache for future use
+	regexCache[scheme] = re
+	return re
+}
+
+// schemeToRegex converts oEmbed scheme pattern to regex pattern
+// Scheme format: "https://*.youtube.com/watch*"
+// Regex output: "^https://[^/]*\.youtube\.com/watch.*$"
+func schemeToRegex(scheme string) string {
+	// Escape special regex characters except *
+	pattern := regexp.QuoteMeta(scheme)
+
+	// Replace escaped \* with regex equivalents
+	// *.domain.com -> [^/]* (any chars except /)
+	// /path/* -> .* (any chars)
+
+	// Replace \* at domain level (before first /)
+	parts := strings.SplitN(pattern, "/", 4) // Split: scheme, "", domain, path
+	if len(parts) >= 3 {
+		// Handle domain wildcards: *.youtube.com
+		parts[2] = strings.Replace(parts[2], "\\*", "[^/]*", -1)
+
+		// Handle path wildcards: /watch*
+		if len(parts) >= 4 {
+			parts[3] = strings.Replace(parts[3], "\\*", ".*", -1)
+		}
+
+		pattern = strings.Join(parts, "/")
+	} else {
+		// Fallback: just replace all \*
+		pattern = strings.Replace(pattern, "\\*", ".*", -1)
+	}
+
+	// Anchor to match full URL
+	return "^" + pattern + "$"
+}
+
+// clearRegexCache clears the regex cache (useful for testing)
+func clearRegexCache() {
+	regexCacheMutex.Lock()
+	defer regexCacheMutex.Unlock()
+	regexCache = make(map[string]*regexp.Regexp)
 }
 
 // discoverOEmbedEndpoint discovers oEmbed endpoint from HTML
