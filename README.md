@@ -300,7 +300,7 @@ Inspired by [Embedly](https://embed.ly/), [Iframely](https://iframely.com/), [Op
 
 ## License
 
-Zero-Clause BSD (0BSD) - Public domain. See [LICENSE](LICENSE) file.
+Zero-Clause BSD (0BSD) - Functionally equivalent to public domain. See [LICENSE](LICENSE) file.
 
 ---
 

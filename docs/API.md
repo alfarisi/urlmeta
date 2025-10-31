@@ -1279,4 +1279,4 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines on contributing to this
 
 ## License
 
-MIT License - see [LICENSE](../LICENSE) for details.
+0BSD License - see [LICENSE](../LICENSE) for details.
